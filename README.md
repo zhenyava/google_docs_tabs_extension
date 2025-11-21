@@ -1,6 +1,6 @@
 # Google Docs Tab Exporter
 
-A powerful Google Apps Script add-on that fixes the export workflow for the new Google Docs "Tabs" feature. It allows you to download specific tabs with correct filenames and multiple format options.
+A Google Apps Script add-on that fixes the export workflow for the new Google Docs "Tabs" feature. It allows you to download specific tabs with correct filenames and multiple format options.
 
 ## 🧐 The Problem
 
@@ -27,11 +27,7 @@ Google Docs recently introduced **Tabs** to organize content within a single doc
 
 Since this is a standalone script (not yet published to the Marketplace), you can install it directly into any Google Doc.
 
-### Prerequisites
-*   A Google account.
-*   A Google Doc with Tabs.
-
-### Step-by-Step Guide
+### Step-by-Step
 
 1.  Open your Google Document.
 2.  In the top menu, go to **Extensions** > **Apps Script**.
