@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+    <style>
+      body { 
+        padding: 15px; 
+        font-family: 'Google Sans', Roboto, Arial, sans-serif; 
+        background-color: #fcfcfc;
+        overflow: hidden;
+      }
+      .auto-mode-container { text-align: center; padding-top: 10px; }
+      .auto-text { font-weight: bold; color: #202124; margin-bottom: 5px; }
+      .auto-subtext { font-size: 12px; color: #5f6368; }
+
+      .manual-mode-container { display: none; } 
+      .form-group { margin-bottom: 15px; }
+      label { display: block; font-weight: 600; margin-bottom: 6px; color: #202124; }
+      select, input { 
+        width: 100%; box-sizing: border-box; padding: 10px; 
+        border: 1px solid #dadce0; border-radius: 4px; font-size: 14px;
+      }
+      .format-badge {
+        background-color: #e8f0fe; color: #1967d2; padding: 5px 10px;
+        border-radius: 16px; font-size: 12px; font-weight: bold;
+        display: inline-block; margin-bottom: 15px;
+      }
+      .btn-container { display: flex; justify-content: flex-end; margin-top: 20px; }
+      button.action { 
+        background-color: #1a73e8; color: white; border: none; 
+        padding: 10px 24px; border-radius: 4px; cursor: pointer; font-weight: 600; 
+        /* Центрирование текста */
+        display: flex; align-items: center; justify-content: center; 
+        line-height: normal; min-height: 36px;
+      }
+      button.action:disabled { background-color: #dadce0; cursor: default; }
+      #status { margin-top: 10px; font-size: 13px; color: #5f6368; min-height: 20px; }
+      .loader {
+        display: inline-block; width: 16px; height: 16px; 
+        border: 3px solid #dadce0; border-radius: 50%; 
+        border-top-color: #1a73e8; animation: spin 1s linear infinite; vertical-align: middle;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+
+    <!-- АВТО РЕЖИМ -->
+    <div id="autoContainer" class="auto-mode-container" style="display:none;">
+      <div class="loader" style="width:24px; height:24px; margin-bottom:10px;"></div>
+      <!-- Вставляем перевод через <?= ... ?> -->
+      <div class="auto-text"><?= text.autoPrep ?></div>
+      <div id="autoFileName" class="auto-subtext"></div>
+    </div>
+
+    <!-- РУЧНОЙ РЕЖИМ -->
+    <div id="manualContainer" class="manual-mode-container">
+      <div class="format-badge"><?= text.badgeFormat ?> <?= targetLabel ?></div>
+
+      <div class="form-group">
+        <label for="tabSelect"><?= text.lblTab ?></label>
+        <select id="tabSelect" onchange="updateFilenameDefault()"></select>
+      </div>
+
+      <div class="form-group">
+        <label for="filenameInput"><?= text.lblFile ?></label>
+        <input type="text" id="filenameInput" placeholder="<?= text.phFile ?>">
+      </div>
+
+      <div id="status"></div>
+
+      <div class="btn-container">
+        <button id="downloadBtn" class="action" onclick="triggerDownload()">
+          <span id="btnText"><?= text.btnDownload ?></span>
+        </button>
+      </div>
+    </div>
+
+    <script>
+      var MODE = "<?= mode ?>"; 
+      var FORMAT = "<?= targetFormat ?>";
+      // Передаем весь объект переводов в JS переменную
+      var LANG = JSON.parse('<?= JSON.stringify(text) ?>'); 
+      var docData = null;
+
+      window.onload = function() {
+        if (MODE === 'auto') {
+          document.getElementById('autoContainer').style.display = 'block';
+        } else {
+          document.getElementById('manualContainer').style.display = 'block';
+          setStatus(LANG.msgLoading, false); // Используем перевод
+          document.getElementById('downloadBtn').disabled = true;
+        }
+
+        google.script.run
+          .withSuccessHandler(onDataReceived)
+          .withFailureHandler(function(err) {
+             if (MODE === 'auto') {
+                document.querySelector('.auto-text').innerText = LANG.msgError + err;
+                document.querySelector('.auto-text').style.color = "red";
+             } else {
+                setStatus(LANG.msgError + err, true);
+             }
+          })
+          .getDocumentData();
+      };
+
+      function onDataReceived(data) {
+        docData = data;
+        var activeTabItem = null;
+        if (data.activeTabId) {
+          activeTabItem = data.tabs.find(function(t) { return t.id === data.activeTabId; });
+        }
+
+        // AUTO
+        if (MODE === 'auto') {
+          var targetId = data.activeTabId;
+          var targetName = "document"; 
+          
+          if (activeTabItem) {
+            targetName = activeTabItem.rawTitle || activeTabItem.name.replace(/^-+\s/, '');
+          } else if (data.tabs.length > 0) {
+             targetId = data.tabs[0].id;
+             targetName = data.tabs[0].name;
+          }
+          document.getElementById('autoFileName').innerText = targetName + '.' + FORMAT;
+          runDownloadProcess(targetId, targetName);
+          return;
+        }
+
+        // MANUAL
+        var select = document.getElementById('tabSelect');
+        select.innerHTML = ''; 
+        
+        if (data.tabs.length === 0) {
+            select.add(new Option(LANG.msgNotFound, ""));
+        } else {
+          data.tabs.forEach(function(tab) {
+            select.add(new Option(tab.name, tab.id));
+          });
+        }
+
+        if (data.activeTabId) select.value = data.activeTabId;
+        
+        updateFilenameDefault();
+        setStatus('', false);
+        document.getElementById('downloadBtn').disabled = false;
+      }
+
+      function updateFilenameDefault() {
+        var select = document.getElementById('tabSelect');
+        if (select.selectedIndex === -1) return;
+        
+        var tabId = select.value;
+        var tabItem = docData.tabs.find(function(t) { return t.id === tabId; });
+        
+        if (tabItem) {
+           var name = tabItem.rawTitle || tabItem.name.replace(/^-+\s/, '');
+           document.getElementById('filenameInput').value = name;
+        }
+      }
+
+      function setStatus(msg, isError) {
+        var el = document.getElementById('status');
+        if(el) {
+            el.innerText = msg;
+            el.style.color = isError ? '#d93025' : '#5f6368';
+        }
+      }
+
+      function triggerDownload() {
+        var tabId = document.getElementById('tabSelect').value;
+        var filename = document.getElementById('filenameInput').value;
+        
+        if (!filename) { alert(LANG.msgEnterName); return; }
+        
+        var btn = document.getElementById('downloadBtn');
+        var btnText = document.getElementById('btnText');
+        btn.disabled = true;
+        btnText.innerHTML = '<span class="loader" style="width:12px;height:12px;border-width:2px;"></span> ' + LANG.btnPreparing;
+        
+        runDownloadProcess(tabId, filename);
+      }
+
+      function runDownloadProcess(tabId, filename) {
+        google.script.run
+          .withSuccessHandler(function(result) {
+            var a = document.createElement('a');
+            a.href = "data:" + result.mimeType + ";base64," + result.base64;
+            a.download = result.filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            if (MODE === 'auto') {
+              document.querySelector('.auto-text').innerText = LANG.msgDone;
+              setTimeout(function(){ google.script.host.close(); }, 1000);
+            } else {
+              var btn = document.getElementById('downloadBtn');
+              var btnText = document.getElementById('btnText');
+              btn.disabled = false;
+              btnText.innerText = LANG.btnDownload;
+              setStatus(LANG.msgDownloaded, false);
+              setTimeout(function(){ google.script.host.close(); }, 2000);
+            }
+          })
+          .withFailureHandler(function(err) {
+            if (MODE === 'auto') {
+                document.querySelector('.auto-text').innerText = LANG.msgError;
+                document.getElementById('autoFileName').style.color = 'red';
+                document.getElementById('autoFileName').innerText = err;
+            } else {
+                var btn = document.getElementById('downloadBtn');
+                btn.disabled = false;
+                document.getElementById('btnText').innerText = LANG.btnDownload;
+                setStatus(LANG.msgError + err, true);
+            }
+          })
+          .processFileDownload(docData.docId, tabId, FORMAT, filename);
+      }
+    </script>
+  </body>
+</html>
